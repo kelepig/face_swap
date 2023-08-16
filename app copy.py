@@ -147,8 +147,6 @@ load_face_swapper_model()
 
 
 
-
-
 def process_api(
     input_type,
     image_path,
@@ -174,17 +172,38 @@ def process_api(
     crop_bott,
     crop_left,
     crop_right,
-    *specifics,
+    *specifics
 ):
     output_path = os.getcwd()
-    
+    print(input_type,
+    image_path,
+    video_path,
+    directory_path,
+    source_path,
+    output_path,
+    output_name,
+    keep_output_sequence,
+    condition,
+    age,
+    distance,
+    face_enhancer_name,
+    enable_face_parser,
+    mask_includes,
+    mask_soft_kernel,
+    mask_soft_iterations,
+    blur_amount,
+    erode_amount,
+    face_scale,
+    enable_laplacian_blend,
+    crop_top,
+    crop_bott,
+    crop_left,
+    crop_right,
+    *specifics)
     global WORKSPACE
     global OUTPUT_FILE
     global PREVIEW
     WORKSPACE, OUTPUT_FILE, PREVIEW = None, None, None
-    ## ------------------------------ GUI UPDATE FUNC ------------------------------
-
-    
     ## ------------------------------ PREPARE INPUTS & LOAD MODELS ------------------------------
 
     load_nsfw_detector_model()
@@ -192,17 +211,17 @@ def process_api(
     load_face_swapper_model()
 
     if face_enhancer_name != "NONE":
-        if face_enhancer_name not in cv2_interpolations:
-            print(f"### \n ⌛ Loading {face_enhancer_name} model...")
+        # if face_enhancer_name not in cv2_interpolations:
+        #     a = 0
         FACE_ENHANCER = load_face_enhancer_model(name=face_enhancer_name, device=device)
     else:
         FACE_ENHANCER = None
 
     if enable_face_parser:
-        print("### \n ⌛ Loading face parsing model...")
         load_face_parser_model()
+    
     includes = mask_regions_to_list(mask_includes)
-    specifics = (None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None)
+    
     specifics = list(specifics)
     half = len(specifics) // 2
     sources = specifics[:half]
@@ -212,26 +231,23 @@ def process_api(
     if crop_left > crop_right:
         crop_left, crop_right = crop_right, crop_left
     crop_mask = (crop_top, 511-crop_bott, crop_left, 511-crop_right)
- 
     def swap_process(image_sequence):
         ## ------------------------------ CONTENT CHECK ------------------------------
 
-        print("### \n ⌛ Checking contents...")
         nsfw = NSFW_DETECTOR.is_nsfw(image_sequence)
         if nsfw:
             message = "NSFW Content detected !!!"
-            print(f"### \n 🔞 {message}")
             assert not nsfw, message
             return False
         EMPTY_CACHE()
 
         ## ------------------------------ ANALYSE FACE ------------------------------
 
-        print("### \n ⌛ Analysing face data...")
         if condition != "Specific Face":
             source_data = source_path, age
         else:
             source_data = ((sources, specifics), distance)
+
         analysed_targets, analysed_sources, whole_frame_list, num_faces_per_frame = get_analysed_data(
             FACE_ANALYSER,
             image_sequence,
@@ -243,7 +259,6 @@ def process_api(
 
         ## ------------------------------ SWAP FUNC ------------------------------
 
-        print("### \n ⌛ Generating faces...")
         preds = []
         matrs = []
         count = 0
@@ -257,23 +272,21 @@ def process_api(
             if USE_CUDA:
                 image_grid = create_image_grid(batch_pred, size=128)
                 PREVIEW = image_grid[:, :, ::-1]
-                print(f"### \n ⌛ Generating face Batch {count}")
 
         ## ------------------------------ FACE ENHANCEMENT ------------------------------
 
         generated_len = len(preds)
         if face_enhancer_name != "NONE":
-            print(f"### \n ⌛ Upscaling faces with {face_enhancer_name}...")
             for idx, pred in tqdm(enumerate(preds), total=generated_len, desc=f"Upscaling with {face_enhancer_name}"):
                 enhancer_model, enhancer_model_runner = FACE_ENHANCER
                 pred = enhancer_model_runner(pred, enhancer_model)
                 preds[idx] = cv2.resize(pred, (512,512))
+
         EMPTY_CACHE()
 
         ## ------------------------------ FACE PARSING ------------------------------
 
         if enable_face_parser:
-            print("### \n ⌛ Face-parsing mask...")
             masks = []
             count = 0
             for batch_mask in get_parsed_mask(FACE_PARSER, preds, classes=includes, device=device, batch_size=BATCH_SIZE, softness=int(mask_soft_iterations)):
@@ -284,8 +297,8 @@ def process_api(
                 if len(batch_mask) > 1:
                     image_grid = create_image_grid(batch_mask, size=128)
                     PREVIEW = image_grid[:, :, ::-1]
-                    print(f"### \n ⌛ Face parsing Batch {count}")
             masks = np.concatenate(masks, axis=0) if len(masks) >= 1 else masks
+
         else:
             masks = [None] * generated_len
 
@@ -300,7 +313,6 @@ def process_api(
 
         ## ------------------------------ PASTE-BACK ------------------------------
 
-        print("### \n ⌛ Pasting back...")
         def post_process(frame_idx, frame_img, split_preds, split_matrs, split_masks, enable_laplacian_blend, crop_mask, blur_amount, erode_amount):
             whole_img_path = frame_img
             whole_img = cv2.imread(whole_img_path)
@@ -308,9 +320,12 @@ def process_api(
             for p, m, mask in zip(split_preds[frame_idx], split_matrs[frame_idx], split_masks[frame_idx]):
                 p = cv2.resize(p, (512,512))
                 mask = cv2.resize(mask, (512,512)) if mask is not None else None
+
                 m /= 0.25
                 whole_img = paste_to_whole(p, whole_img, m, mask=mask, crop_mask=crop_mask, blend_method=blend_method, blur_amount=blur_amount, erode_amount=erode_amount)
+                
             cv2.imwrite(whole_img_path, whole_img)
+
 
         def concurrent_post_process(image_sequence, *args):
             with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -339,21 +354,19 @@ def process_api(
         target = cv2.imread(image_path)
         output_file = os.path.join(output_path, output_name + ".png")
         cv2.imwrite(output_file, target)
-
         swap_process([output_file])
+        # for info_update in swap_process([output_file]):
+        #     a = 0
 
         OUTPUT_FILE = output_file
         WORKSPACE = output_path
         PREVIEW = cv2.imread(output_file)[:, :, ::-1]
-
-
     ## ------------------------------ VIDEO ------------------------------
 
     elif input_type == "Video":
         temp_path = os.path.join(output_path, output_name, "sequence")
         os.makedirs(temp_path, exist_ok=True)
 
-        print("### \n ⌛ Extracting video frames...")
         image_sequence = []
         cap = cv2.VideoCapture(video_path)
         curr_idx = 0
@@ -367,14 +380,13 @@ def process_api(
         cap.release()
         cv2.destroyAllWindows()
 
-        swap_process(image_sequence)
+        for info_update in swap_process(image_sequence):
+            a = 0
 
-        print("### \n ⌛ Merging sequence...")
         output_video_path = os.path.join(output_path, output_name + ".mp4")
         merge_img_sequence_from_ref(video_path, image_sequence, output_video_path)
 
         if os.path.exists(temp_path) and not keep_output_sequence:
-            print("### \n ⌛ Removing temporary files...")
             shutil.rmtree(temp_path)
 
         WORKSPACE = output_path
@@ -398,18 +410,18 @@ def process_api(
                 cv2.imwrite(new_file_path, img)
                 file_paths.append(new_file_path)
 
-        swap_process(file_paths)
+        for info_update in swap_process(file_paths):
+            a = 0
 
         PREVIEW = cv2.imread(file_paths[-1])[:, :, ::-1]
         WORKSPACE = temp_path
         OUTPUT_FILE = file_paths[-1]
 
+
     ## ------------------------------ STREAM ------------------------------
 
     elif input_type == "Stream":
         pass
-
-    return os.path.join(output_path, output_name + '.png')
 
 
 
@@ -459,11 +471,11 @@ def process(
     crop_right,
     *specifics,
 ):
-    print(input_type,
-    image_path,
-    video_path,
-    directory_path,
-    source_path,
+    print("input_type",input_type,
+    'image_path',image_path,
+    'video_path',video_path,
+    'directory_path',directory_path,
+    'source_path',source_path,
     output_path,
     output_name,
     keep_output_sequence,
